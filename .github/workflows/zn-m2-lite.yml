@@ -66,7 +66,13 @@ jobs:
 
     - name: Load custom feeds
       run: |
-        [ -e "$FEEDS_CONF" ] && mv "$FEEDS_CONF" openwrt/feeds.conf.default
+        echo "=== before overwrite: openwrt/feeds.conf.default ==="
+        cat openwrt/feeds.conf.default
+        if [ -e "$FEEDS_CONF" ]; then
+          cp -f "$FEEDS_CONF" openwrt/feeds.conf.default
+        fi
+        echo "=== after overwrite ==="
+        cat openwrt/feeds.conf.default
         cd openwrt
         bash "$GITHUB_WORKSPACE/$DIY_P1_SH"
 
