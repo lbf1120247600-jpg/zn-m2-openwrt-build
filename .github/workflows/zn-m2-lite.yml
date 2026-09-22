@@ -27,7 +27,7 @@ defaults:
 env:
   REPO_URL: https://github.com/openwrt-fork/sdf8057-ipq6000.git
   REPO_BRANCH: master
-  FEEDS_CONF: feeds-lite.conf.default
+  FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: ./config/zn-m2-lite.config
   DIY_P1_SH: ./scripts/zn-m2/diy-part1.sh
   DIY_P2_SH: ./scripts/zn-m2/diy-part2.sh
@@ -66,12 +66,10 @@ jobs:
 
     - name: Load custom feeds
       run: |
-        echo "=== before overwrite: openwrt/feeds.conf.default ==="
-        cat openwrt/feeds.conf.default
-        if [ -e "$FEEDS_CONF" ]; then
-          cp -f "$FEEDS_CONF" openwrt/feeds.conf.default
-        fi
-        echo "=== after overwrite ==="
+        echo "=== FEEDS_CONF=$FEEDS_CONF ==="
+        ls -la "$FEEDS_CONF"
+        cp -f "$FEEDS_CONF" openwrt/feeds.conf.default
+        echo "=== applied feeds.conf.default ==="
         cat openwrt/feeds.conf.default
         cd openwrt
         bash "$GITHUB_WORKSPACE/$DIY_P1_SH"
