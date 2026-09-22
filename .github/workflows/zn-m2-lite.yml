@@ -1,0 +1,172 @@
+#
+# zn-m2-lite build — 精简优化版（单变体）
+#
+# 相比原版：
+#   - 只构建 lite 一个变体（去掉 gecoosac-v2，省一半构建时间）
+#   - 精简配置（见 config/zn-m2-lite.config）
+#   - 定制 DIY 脚本（scripts/zn-m2-lite/）
+#
+name: zn-m2-lite build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release 标签（留空则用日期）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  actions: write
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+env:
+  REPO_URL: https://github.com/openwrt-fork/sdf8057-ipq6000.git
+  REPO_BRANCH: master
+  FEEDS_CONF: feeds-lite.conf.default
+  CONFIG_FILE: ./config/zn-m2-lite.config
+  DIY_P1_SH: ./scripts/zn-m2/diy-part1.sh
+  DIY_P2_SH: ./scripts/zn-m2/diy-part2.sh
+  DIY_P3_SH: ./scripts/zn-m2/diy-part3.sh
+  TZ: Asia/Shanghai
+  FIRMWARE_NAME: zn-m2-lite
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup build environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+          python3-distutils python3-pyelftools rsync unzip zlib1g-dev \
+          swig time file wget curl subversion
+
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        df -h /
+
+    - name: Clone source code
+      working-directory: /workdir
+      run: |
+        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+    - name: Load custom feeds
+      run: |
+        [ -e "$FEEDS_CONF" ] && mv "$FEEDS_CONF" openwrt/feeds.conf.default
+        cd openwrt
+        bash "$GITHUB_WORKSPACE/$DIY_P1_SH"
+
+    - name: Update feeds
+      run: cd openwrt && ./scripts/feeds update -a
+
+    - name: Modify feeds
+      run: |
+        cd openwrt
+        bash "$GITHUB_WORKSPACE/$DIY_P2_SH"
+
+    - name: Install feeds
+      run: cd openwrt && ./scripts/feeds install -a
+
+    - name: Load custom configuration
+      run: |
+        [ -e files ] && mv files openwrt/files
+        [ -e "$CONFIG_FILE" ] && cp "$CONFIG_FILE" openwrt/.config
+        cd openwrt
+        bash "$GITHUB_WORKSPACE/$DIY_P3_SH"
+        cp .config /tmp/zn-m2-lite-full.config
+
+    - name: Prepare compile
+      run: |
+        cd openwrt
+        make defconfig
+        echo "=== 编译目标确认 ==="
+        grep -E 'CONFIG_TARGET.*=|CONFIG_TARGET_.*_DEVICE' .config | head -5
+        echo "=== 关键包确认 ==="
+        grep -E 'luci-app-passwall|luci-app-openclash' .config | head -5
+
+    - name: Download packages
+      run: |
+        cd openwrt
+        make download -j8
+        find dl -size -1024c -exec rm -f {} \; 2>/dev/null || true
+
+    - name: Compile firmware
+      run: |
+        cd openwrt
+        echo "$(nproc) thread compile"
+        make -j$(nproc) V=s || make -j1 V=s
+
+    - name: Organize firmware files
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        mkdir -p /tmp/release-firmware
+        cp -a *.bin *.ubi *.manifest *.buildinfo /tmp/release-firmware/ 2>/dev/null || \
+          cp -a . /tmp/release-firmware/
+        echo "=== 产物 ==="
+        ls -lh /tmp/release-firmware/
+
+    - name: Generate release info
+      id: tag
+      run: |
+        TAG_INPUT="${{ github.event.inputs.tag }}"
+        if [ -n "$TAG_INPUT" ]; then
+          TAG="$TAG_INPUT"
+        else
+          TAG="lite.$(date +%Y%m%d)"
+        fi
+        echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+        {
+          echo "## ZN-M2 Lite 精简固件"
+          echo ""
+          echo "- 构建时间: $(date '+%Y-%m-%d %H:%M') CST"
+          echo "- 目标设备: zn_m2 (IPQ6018 / kernel 4.4.60)"
+          echo "- 优化目标: 208MB 内存 / 6MB rootfs"
+          echo ""
+          echo "### 包含"
+          echo "- Passwall (SingBox / Xray / Haproxy / Hysteria)"
+          echo "- OpenClash (可选)"
+          echo "- ChinaDNS-NG"
+          echo "- LuCI (Argon / Design 主题)"
+          echo "- ttyd Web 终端"
+          echo ""
+          echo "### 已精简掉"
+          echo "WireGuard / OpenVPN / Lucky / NPS / 集客AC / DDNS / UPnP / WOL / 压测工具"
+          echo ""
+          echo "### 刷机"
+          echo "- uboot 刷入: \`*factory-lite.ubi\`"
+          echo "- 系统升级: \`*sysupgrade-lite.bin\`"
+          echo "- 默认地址: 192.168.1.1"
+        } > release.txt
+
+    - name: Upload firmware to release
+      uses: softprops/action-gh-release@v2
+      if: success()
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        name: ${{ steps.tag.outputs.release_tag }}
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: /tmp/release-firmware/*
+
+    - name: Delete old workflows runs
+      if: always()
+      uses: Mattraks/delete-workflow-runs@v2
+      with:
+        retain_days: 3
+        keep_minimum_runs: 2
