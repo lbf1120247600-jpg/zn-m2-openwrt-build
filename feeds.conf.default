@@ -1,17 +1,13 @@
-# zn-m2-lite feeds
-# 基础源沿用社区固件（已适配 kernel 4.4.60 / IPQ6018）
+# zn-m2-lite feeds (fixed 2026-09-22)
+# packages/luci source: openwrt-fork/sdf8057-* (lazyoop/* is 404)
 src-git packages https://github.com/openwrt-fork/sdf8057-packages.git;2023
 src-git luci https://github.com/openwrt-fork/sdf8057-luci.git;2023
 src-git routing https://github.com/openwrt/routing.git;openwrt-21.02
 src-git telephony https://github.com/openwrt/telephony.git;openwrt-21.02
 
-# 代理：Passwall（主力，社区固件已验证可用）
+# Passwall (main proxy)
 src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main
 src-git passwall_luci https://github.com/Openwrt-Passwall/openwrt-passwall.git;main
 
-# OpenClash（可选，19.07 兼容性未验证，如编译失败删掉此行即可）
+# OpenClash (optional)
 src-git openclash https://github.com/vernesong/OpenClash.git;master
-
-# 说明：以下为原固件的源，精简版已移除对应软件，故一并删除
-# src-git lucky    （内网穿透，已砍）
-# src-git gecoosac （集客AC，已砍）
